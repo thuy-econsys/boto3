@@ -1,0 +1,10 @@
+# code editor
+.vscode/
+
+# python virtual environment
+.venv/
+
+# Python Byte-compiled/ optimized / DLL files
+__pycache__/
+*.py[cod]
+*.$py.class
