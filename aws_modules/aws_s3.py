@@ -1,5 +1,3 @@
-# https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html#client
-
 import boto3
 import json
 
@@ -135,13 +133,11 @@ def check_bucket_policy(bucket_issues={}):
             policy_json = json.loads(response['Policy'])
 
             for statement in policy_json['Statement']:
-
-                if ('Condition' not in statement) or ('Bool' not in statement['Condition']):
-                    continue
-                elif statement['Condition']['Bool']['aws:SecureTransport'] == 'false':
-                    ssl_key_exists = True
-                    # LOGGER.info(f'SSL enforced for {bucket_name}')
-                    break
+                if 'Condition' in statement.keys() and 'Bool' in statement['Condition'].keys():
+                    if statement['Condition']['Bool']['aws:SecureTransport'] == 'false':
+                        ssl_key_exists = True
+                        LOGGER.info(f'SSL enforced for {bucket_name}')
+                        break
 
             if(not ssl_key_exists):
                 cis_id = "2.1.2"
