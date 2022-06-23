@@ -1,7 +1,7 @@
 from my_modules.benchmarker import print_execution_time
 
 from aws_modules.aws_s3 import check_bucket_encryption, check_bucket_policy, check_bucket_public_access, check_bucket_versioning
-from aws_modules.aws_cloudtrails import check_cloudtrail
+from aws_modules.aws_cloudtrails import check_cloudtrail, check_cloudwatch_is_logging
 
 
 def main():
@@ -11,11 +11,12 @@ def main():
     # bucket_issues = check_bucket_encryption()
     # bucket_issues = check_bucket_policy(bucket_issues)
     # bucket_issues = check_bucket_public_access(bucket_issues)
-    bucket_issues = check_bucket_versioning()
-    print(bucket_issues)
+    # bucket_issues = check_bucket_versioning()
+    # print(bucket_issues)
 
     # trails = check_cloudtrail()
-    # print(trails)
+    trail_issues = check_cloudwatch_is_logging()
+    print(trail_issues)
 
 
 if __name__ == '__main__':
