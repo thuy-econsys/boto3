@@ -1,8 +1,9 @@
 import boto3
 import json
 
-from botocore.exceptions import ClientError
+from aws_modules.cis_error_logger import cis_issue_logger
 
+from botocore.exceptions import ClientError
 import logging
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger()
@@ -33,11 +34,7 @@ def check_bucket_versioning(bucket_issues={}):
                 msg = 'Versioning not enabled'
                 LOGGER.warning(f'{msg} for {bucket_name}')
 
-                if bucket_name not in bucket_issues.keys():
-                    bucket_issues[bucket_name] = []
-
-                if msg not in bucket_issues[bucket_name]:
-                    bucket_issues[bucket_name].append({cis_id: msg})
+                bucket_issues = cis_issue_logger(bucket_name, bucket_issues, cis_id)
 
         except KeyError as key_err:
             msg = f"No such key {key_err} found"
@@ -82,27 +79,19 @@ def check_bucket_encryption(bucket_issues={}):
                     # LOGGER.info(msg)
                     break
 
+            cis_id = "2.1.1"
             if(not encryption_exists):
-                cis_id = "2.1.1"
                 encryption = rule['ApplyServerSideEncryptionByDefault']['SSEAlgorithm']
                 msg = f'Incorrect server side encryption ({encryption})'
                 LOGGER.warning(f'{msg} for {bucket_name}')
 
-                if bucket_name not in bucket_issues.keys():
-                    bucket_issues[bucket_name] = []
-
-                if msg not in bucket_issues[bucket_name]:
-                    bucket_issues[bucket_name].append({cis_id: msg})
+                bucket_issues = cis_issue_logger(bucket_name, bucket_issues, cis_id)
 
         except S3_CLIENT.exceptions.from_code('ServerSideEncryptionConfigurationNotFoundError'):
             msg = 'NO server side encryption config'
             LOGGER.error(f'{msg} for {bucket_name}')
 
-            if bucket_name not in bucket_issues.keys():
-                bucket_issues[bucket_name] = []
-
-            if msg not in bucket_issues[bucket_name]:
-                bucket_issues[bucket_name].append({msg})
+            bucket_issues = cis_issue_logger(bucket_name, bucket_issues, cis_id, 1)
 
         except KeyError as key_err:
             msg = f"No such key {key_err} found"
@@ -136,7 +125,7 @@ def check_bucket_policy(bucket_issues={}):
                 if 'Condition' in statement.keys() and 'Bool' in statement['Condition'].keys():
                     if statement['Condition']['Bool']['aws:SecureTransport'] == 'false':
                         ssl_key_exists = True
-                        LOGGER.info(f'SSL enforced for {bucket_name}')
+                        # LOGGER.info(f'SSL enforced for {bucket_name}')
                         break
 
             if(not ssl_key_exists):
@@ -144,21 +133,16 @@ def check_bucket_policy(bucket_issues={}):
                 msg = 'SSL NOT enforced'
                 LOGGER.warning(f'{msg} for {bucket_name}')
 
-                if bucket_name not in bucket_issues.keys():
-                    bucket_issues[bucket_name] = []
-
-                if msg not in bucket_issues[bucket_name]:
-                    bucket_issues[bucket_name].append({cis_id: msg})
+                bucket_issues = cis_issue_logger(bucket_name, bucket_issues, cis_id)
 
         except S3_CLIENT.exceptions.from_code('NoSuchBucketPolicy'):
             msg = 'NO Bucket Policy'
             LOGGER.error(f'{msg} for {bucket_name}')
 
             if bucket_name not in bucket_issues.keys():
-                bucket_issues[bucket_name] = []
-
-            if msg not in bucket_issues[bucket_name]:
-                bucket_issues[bucket_name].append(msg)
+                bucket_issues[bucket_name] = {}
+            if msg not in bucket_issues[bucket_name].values():
+                bucket_issues[bucket_name].update({'exception': msg})
 
         except KeyError as key_err:
             msg = f"No such key {key_err} found"
@@ -199,10 +183,11 @@ def check_bucket_public_access(bucket_issues={}):
                 public_access_block_exists = True
                 # msg = f'{bucket_name} has {pab_response["PublicAccessBlockConfiguration"]}'
                 # LOGGER.info(msg)
+                break
 
         except S3_CLIENT.exceptions.from_code('NoSuchPublicAccessBlockConfiguration'):
             msg = 'NO public access block configuration'
-            # LOGGER.error(f'{msg} for {bucket_name}')
+            LOGGER.error(f'{msg} for {bucket_name}')
 
         except KeyError as key_err:
             msg = f"No such key {key_err} found"
@@ -220,6 +205,7 @@ def check_bucket_public_access(bucket_issues={}):
             # $ aws s3api get-bucket-acl --bucket <bucket_name> --query 'Grants[?Grantee.URI== `http://acs.amazonaws.com/groups/global/AllUsers` ]'
             # $ aws s3api get-bucket-acl --bucket <bucket_name> --query 'Grants[?Grantee.URI== `http://acs.amazonaws.com/groups/global/AuthenticatedUsers` ]'
             # FIXME if URI for s3 logging exists, http://acs.amazonaws.com/groups/s3/LogDelivery, Anonymous User access logic is skipped?
+            # possibly separate try/except blocks for policy_response
             for grant in acl_response['Grants']:
                 if 'http://acs.amazonaws.com/groups/global/AllUsers' not in grant['Grantee'].values():
                     restricted_alluser_acl_exists = True
@@ -239,14 +225,13 @@ def check_bucket_public_access(bucket_issues={}):
                     restricted_anonymous_access_exists = True
 
         except S3_CLIENT.exceptions.from_code('NoSuchBucketPolicy'):
-            msg = 'NO Bucket Policy'
+            msg = 'No bucket policy'
             LOGGER.error(f'{msg} for {bucket_name}')
 
             if bucket_name not in bucket_issues.keys():
-                bucket_issues[bucket_name] = []
-
-            if msg not in bucket_issues[bucket_name]:
-                bucket_issues[bucket_name].append(msg)
+                bucket_issues[bucket_name] = {}
+            if msg not in bucket_issues[bucket_name].values():
+                bucket_issues[bucket_name].update({'exception': msg})
 
         except KeyError as key_err:
             msg = f"No such key {key_err} found"
@@ -264,41 +249,18 @@ def check_bucket_public_access(bucket_issues={}):
         else:
             cis_id = "2.1.5"
 
+            # TODO DRY refactor
             if(not public_access_block_exists):
-                msg = 'NO Public Access Block configuration'
-
-                if bucket_name not in bucket_issues.keys():
-                    bucket_issues[bucket_name] = []
-
-                if msg not in bucket_issues[bucket_name]:
-                    bucket_issues[bucket_name].append({cis_id: msg})
+                bucket_issues = cis_issue_logger(bucket_name, bucket_issues, cis_id)
 
             if(not restricted_alluser_acl_exists):
-                msg = "AllUser access"
-
-                if bucket_name not in bucket_issues.keys():
-                    bucket_issues[bucket_name] = []
-
-                if msg not in bucket_issues[bucket_name]:
-                    bucket_issues[bucket_name].append({cis_id: msg})
+                bucket_issues = cis_issue_logger(bucket_name, bucket_issues, cis_id, 1)
 
             if(not restricted_privuser_acl_exists):
-                msg = "AuthenticatedUsers access"
-
-                if bucket_name not in bucket_issues.keys():
-                    bucket_issues[bucket_name] = []
-
-                if msg not in bucket_issues[bucket_name]:
-                    bucket_issues[bucket_name].append({cis_id: msg})
+                bucket_issues = cis_issue_logger(bucket_name, bucket_issues, cis_id, 2)
 
             if(not restricted_anonymous_access_exists):
-                msg = 'Anonymous Principal access'
-
-                if bucket_name not in bucket_issues.keys():
-                    bucket_issues[bucket_name] = []
-
-                if msg not in bucket_issues[bucket_name]:
-                    bucket_issues[bucket_name].append({cis_id: msg})
+                bucket_issues = cis_issue_logger(bucket_name, bucket_issues, cis_id, 3)
 
             count += 1
 
