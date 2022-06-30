@@ -1,5 +1,8 @@
 cis_dict = {
-    "2.1.1": ["Incorrect server side encryption"],
+    "2.1.1": [
+        "Incorrect server side encryption",
+        "NO server side encryption config"
+    ],
     "2.1.2": ["SSL NOT enforced"],
     "2.1.3": ["Versioning not enabled"],
     "2.1.5": [
