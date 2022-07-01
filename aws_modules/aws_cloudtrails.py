@@ -1,9 +1,9 @@
 import boto3
-# import json
 from datetime import datetime
 
-from botocore.exceptions import ClientError
+from aws_modules.cis_error_logger import cis_issue_logger
 
+from botocore.exceptions import ClientError
 import logging
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger()
@@ -20,9 +20,6 @@ S3_CLIENT = boto3.client("s3", region_name=REGION)
 BUCKETS = S3_CLIENT.list_buckets()['Buckets']
 
 
-# 2.1.5, 3.3
-# $ aws cloudtrail describe-trails --query 'trailList[*].S3BucketName'
-
 '''
 $ aws cloudtrail get-event-selectors --trail-name cloudtrail-multi-region
 {
@@ -33,22 +30,6 @@ $ aws cloudtrail get-event-selectors --trail-name cloudtrail-multi-region
             "IncludeManagementEvents": true,
             "DataResources": [],
             "ExcludeManagementEventSources": []
-        }
-    ]
-}
-
-
-$ aws configservice describe-configuration-recorders
-{
-    "ConfigurationRecorders": [
-        {
-            "name": "default",
-            "roleARN": "arn:aws-us-gov:iam::578463482707:role/Config-Recorder-578463482707",
-            "recordingGroup": {
-                "allSupported": true,
-                "includeGlobalResourceTypes": true,
-                "resourceTypes": []
-            }
         }
     ]
 }
@@ -83,21 +64,11 @@ $ aws configservice describe-configuration-recorder-status
     ]
 }
 
-3.6
-$ aws s3api get-bucket-logging --bucket econsys-security-aws-audit-log-578463482707-west
-{
-    "LoggingEnabled": {
-        "TargetBucket": "econsys-security-aws-audit-log-578463482707-access-logs-west",
-        "TargetPrefix": ""
-    }
-}
-
 3.7
 aws cloudtrail describe-trails --region us-gov-west-1 --query trailList[*].KmsKeyId
 '''
 
 
-# aws cloudtrail list-trails --region us-gov-west-1 --query Trails[*].Name
 def check_cloudtrail(trail_issues={}):
     count = 0
     # at least one trail is Multi-regional
@@ -119,23 +90,16 @@ def check_cloudtrail(trail_issues={}):
                 msg = "Logfile validation is NOT enabled"
                 LOGGER.warning(f'{msg} for {trail_name}')
 
-                if trail_name not in trail_issues.keys():
-                    trail_issues[trail_name] = []
-                if msg not in trail_issues[trail_name]:
-                    trail_issues[trail_name].append({cis_id: msg})
-
-            # response = CLOUDTRAIL_CLIENT.get_trail_status(Name=trail_name)
-
-            # print(response)
+                trail_issues = cis_issue_logger(trail_name, trail_issues, cis_id)
 
         except CLOUDTRAIL_CLIENT.exceptions.from_code('TrailNotFoundException'):
             msg = 'NO Trail'
             LOGGER.error(f'{msg} for {trail_name}')
 
             if trail_name not in trail_issues.keys():
-                trail_issues[trail_name] = []
-            if msg not in trail_issues[trail_name]:
-                trail_issues[trail_name].append({msg})
+                trail_issues[trail_name] = {}
+            if msg not in trail_issues[trail_name].values():
+                trail_issues[trail_name].update({'exception': msg})
 
         except KeyError as key_err:
             msg = f"No such key {key_err} found"
@@ -149,10 +113,7 @@ def check_cloudtrail(trail_issues={}):
             msg = "Multi-region is not enabled for any trails"
             LOGGER.warning(f'{msg}')
 
-            if trail_name not in trail_issues.keys():
-                trail_issues[trail_name] = []
-            if msg not in trail_issues[trail_name]:
-                trail_issues[trail_name].append({cis_id: msg})
+            trail_issues = cis_issue_logger(trail_name, trail_issues, cis_id)
 
         try:
             response = S3_CLIENT.get_bucket_logging(
@@ -165,8 +126,9 @@ def check_cloudtrail(trail_issues={}):
                 # LOGGER.info(f'{msg} to {bucket_name} for {trail_name}')
             else:
                 msg = "Logging not enabled"
-                trail_issues[trail_name].append({cis_id: msg})
                 LOGGER.warning(f'{msg}')
+                
+                trail_issues = cis_issue_logger(trail_name, trail_issues, cis_id)
 
         except KeyError as key_err:
             msg = f"No such key {key_err} found"
@@ -179,17 +141,12 @@ def check_cloudtrail(trail_issues={}):
     return trail_issues
 
 
-# $ aws cloudtrail get-trail-status --name prod-cloudtrail-logs --query ['IsLogging']
-# $ aws cloudtrail describe-trails --region us-gov-west-1 --query trailList[*].CloudWatchLogsLogGroupArn
-# $ aws cloudtrail get-trail-status --name prod-cloudtrail-logs --query ['LatestDeliveryTime']
-# aws cloudtrail get-event-selectors --region us-gov-west-1 --trail-name <trail_name> --query EventSelectors[*].DataResources[]
 def check_cloudwatch_is_logging(trail_issues={}):
     count = 0
     one_day_ago = int(datetime.now().timestamp()) - 86400
 
     for trail in TRAILS:
         trail_name = trail['Name']
-        # bucket_name = trail['S3BucketName']
 
         try:
             response = CLOUDTRAIL_CLIENT.get_trail_status(Name=trail_name)
@@ -203,10 +160,8 @@ def check_cloudwatch_is_logging(trail_issues={}):
                 if last_logged < one_day_ago:
                     LOGGER.warning(f'OVERDUE: {msg} for {trail_name}')
 
-                    if trail_name not in trail_issues.keys():
-                        trail_issues[trail_name] = []
-                    if msg not in trail_issues[trail_name]:
-                        trail_issues[trail_name].append({cis_id: msg})
+                    trail_issues = cis_issue_logger(trail_name, trail_issues, cis_id)
+
                 # else:
                 #     LOGGER.info(f'{msg} for {trail_name}')
 
@@ -214,19 +169,16 @@ def check_cloudwatch_is_logging(trail_issues={}):
                 msg = 'CloudWatch not being logged'
                 LOGGER.warning(f'{msg} for {trail_name}')
 
-                if trail_name not in trail_issues.keys():
-                    trail_issues[trail_name] = []
-                if msg not in trail_issues[trail_name]:
-                    trail_issues[trail_name].append({cis_id: msg})
+                trail_issues = cis_issue_logger(trail_name, trail_issues, cis_id)
 
         except CLOUDTRAIL_CLIENT.exceptions.from_code('TrailNotFoundException'):
             msg = 'NO Trail'
             LOGGER.error(f'{msg} for {trail_name}')
 
             if trail_name not in trail_issues.keys():
-                trail_issues[trail_name] = []
-            if msg not in trail_issues[trail_name]:
-                trail_issues[trail_name].append({msg})
+                trail_issues[trail_name] = {}
+            if msg not in trail_issues[trail_name].values():
+                trail_issues[trail_name].update({'exception': msg})
 
         except KeyError as key_err:
             msg = f"No such key {key_err} found"
@@ -238,6 +190,8 @@ def check_cloudwatch_is_logging(trail_issues={}):
     count += 1
     return trail_issues
 
+
+# aws cloudtrail get-event-selectors --region us-gov-west-1 --trail-name <trail_name> --query EventSelectors[*].DataResources[]
 
 # output of empty array means no Object-level logging
 # aws cloudtrail put-event-selectors --region <region-name> --trail-name <trail-name> --event-selectors \
