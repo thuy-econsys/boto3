@@ -16,29 +16,25 @@ AWS_ACCOUNT = STS_CLIENT.get_caller_identity().get('Account')
 S3_CLIENT = boto3.client("s3", region_name=REGION)
 BUCKETS = S3_CLIENT.list_buckets()['Buckets']
 
+S3_RESOURCE = boto3.resource('s3', region_name=REGION)
+S3_BUCKETS = S3_RESOURCE.buckets.all()
 
-# aws s3api get-bucket-versioning --region us-gov-west-1 --bucket <bucket_name>
+
 def check_bucket_versioning(bucket_issues={}):
     count = 0
 
-    for bucket in BUCKETS:
-        bucket_name = bucket['Name']
+    for s3_bucket in S3_BUCKETS:
+        s3_name = s3_bucket.name
 
         try:
-            response = S3_CLIENT.get_bucket_versioning(
-                Bucket=bucket_name,
-                ExpectedBucketOwner=AWS_ACCOUNT)
+            versioning = S3_RESOURCE.BucketVersioning(s3_name)
+            # print(f"{s3_bucket.name}:  status: {versioning.status}; mfa-delete? {versioning.mfa_delete}")
 
-            if 'Status' not in response or response['Status'] != 'Enabled':
+            if (versioning.status != 'Enabled'):
                 cis_id = "2.1.3"
                 msg = 'Versioning not enabled'
-                LOGGER.warning(f'{msg} for {bucket_name}')
-
-                bucket_issues = cis_issue_logger(bucket_name, bucket_issues, cis_id)
-
-        except KeyError as key_err:
-            msg = f"No such key {key_err} found"
-            LOGGER.error(f'{msg} for {bucket_name}')
+                # LOGGER.warning(f'{msg} for {s3_name}')
+                bucket_issues = cis_issue_logger(s3_name, bucket_issues, cis_id)
 
         except ClientError as client_error:
             LOGGER.error(f'ClientError: {client_error}')
@@ -88,6 +84,7 @@ def check_bucket_encryption(bucket_issues={}):
                 bucket_issues = cis_issue_logger(bucket_name, bucket_issues, cis_id)
 
         except S3_CLIENT.exceptions.from_code('ServerSideEncryptionConfigurationNotFoundError'):
+            cis_id = "2.1.1"
             msg = 'NO server side encryption config'
             LOGGER.error(f'{msg} for {bucket_name}')
 
