@@ -11,7 +11,7 @@ REGION = 'us-gov-west-1'
 AWS_ACCOUNT = boto3.client('sts', region_name=REGION).get_caller_identity().get('Account')
 
 RDS_CLIENT = boto3.client('rds')
-RDS_INSTANCES = RDS_CLIENT.describe_db_instances()['DBInstances']
+RDS_CLIENT = RDS_CLIENT.describe_db_instances()
 
 EC2_CLIENT = boto3.client('ec2', region_name=REGION)
 EC2_RESOURCE = boto3.resource('ec2', region_name=REGION)
@@ -22,8 +22,19 @@ reservations = EC2_CLIENT.describe_instances(
             "Name": "instance-state-name",
             "Values": ["running"]
         }
-    ]
+    ],
+    OwnerIds=['self']
 ).get("Reservations")
+
+EC2_INSTANCES = EC2_RESOURCE.instances.filter(
+    Filters=[
+        {
+            "Name": "instance-state-name",
+            "Values": ["running", "pending"]
+        }
+    ],
+    # InstanceIds=['']
+)
 
 AMI_CLIENT = EC2_CLIENT.describe_images(
     Filters=[
@@ -85,13 +96,24 @@ def print_list(print_this: list):
         print(f"{item}")
 
 
-# 2.3.1
-# $ aws rds describe-db-instances - -region us-gov-west-1 - -query 'DBInstances[*].DBInstanceIdentifier'
-# $ aws rds describe-db-instances - -region us-gov-west-1 - -db-instance-identifier < DB-Name > --query 'DBInstances[*].StorageEncrypted'
 def print_rds_instances():
-    for rds in RDS_INSTANCES:
-        print(rds)
-        # print(f'{rds["DBInstanceIdentifier"]}')
+    if not RDS_CLIENT:
+        print("No RDS instances to print.")
+        return
+
+    for rds in RDS_CLIENT['DBInstances']:
+        try:
+            # print(rds)
+            print(f'{rds["DBInstanceIdentifier"]}')
+            cis_id = "2.3.1"
+            print(f"storage encryption: {rds['StorageEncrypted']}")
+            cis_id = "2.3.2"
+            print(f"minor ver upgrade: {rds['AutoMinorVersionUpgrade']}")
+            cis_id = "2.3.3"
+            print(f"public access: {rds['PubliclyAccessible']}\n")
+
+        except ClientError as err:
+            LOGGER.error(f'ClientError: {err}')
 
 
 # 2.2.1
@@ -99,9 +121,13 @@ def print_rds_instances():
 # aws ec2 describe-route-tables --filter "Name=vpc-id,Values=<vpc_id>" --query "RouteTables[*].{RouteTableId:RouteTableId, VpcId:VpcId, Routes:Routes, AssociatedSubnets:Associations[*].SubnetId}"
 def print_ec2_instances():
     for reservation in reservations:
+
         for ec2 in reservation['Instances']:
-            print(f'IP: {ec2["PrivateIpAddress"]}')
-            # print(f'{ec2.get("KeyName")}')
+            print(f'{ec2["InstanceId"]} created by {ec2["ImageId"]} in {ec2["VpcId"]}, state: {ec2["State"]["Name"]}')
+            print(f"has {ec2['BlockDeviceMappings'][0]['Ebs']['VolumeId']} status: {ec2['BlockDeviceMappings'][0]['Ebs']['Status']}")
+
+    # for ec2 in EC2_INSTANCES.all():
+    #     print(f"{ec2.instance_id} created by {ec2.image_id}")
 
 
 def sort_and_filter_amis(days_to_retain: int = 30) -> list:
