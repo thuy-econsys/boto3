@@ -22,8 +22,7 @@ reservations = EC2_CLIENT.describe_instances(
             "Name": "instance-state-name",
             "Values": ["running"]
         }
-    ],
-    OwnerIds=['self']
+    ]
 ).get("Reservations")
 
 EC2_INSTANCES = EC2_RESOURCE.instances.filter(
