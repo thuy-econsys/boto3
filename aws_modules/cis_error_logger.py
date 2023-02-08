@@ -11,6 +11,10 @@ cis_dict = {
         "AuthenticatedUsers access",
         "Anonymous user access"
     ],
+    "2.2.1": ["EBS encryption disabled"],
+    "2.3.1": ["RDS encryption disabled"],
+    "2.3.2": ["RDS Auto Minor Version Upgrade disabled"],
+    "2.3.3": ["RDS Publicly Accessible"],
     "3.1": ["Multi-region is not enabled for any trails"],
     "3.2": ["Logfile validation is not enabled"],
     "3.4": ["CloudWatch is not being logged"],
