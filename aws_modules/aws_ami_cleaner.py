@@ -2,8 +2,6 @@ import boto3
 from botocore.exceptions import ClientError
 from datetime import datetime, timedelta, timezone
 
-from aws_modules.cis_error_logger import cis_issue_logger
-
 import logging
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger()
@@ -11,40 +9,18 @@ LOGGER = logging.getLogger()
 TODAY = datetime.now(tz=timezone.utc)
 REGION = 'us-gov-west-1'
 
-RDS_CLIENT = boto3.client('rds')
-RDS_CLIENT = RDS_CLIENT.describe_db_instances()
-
-EC2_CLIENT = boto3.client('ec2', region_name=REGION)
+# EC2_CLIENT = boto3.client('ec2', region_name=REGION)
 EC2_RESOURCE = boto3.resource('ec2', region_name=REGION)
 
-RESERVATIONS = EC2_CLIENT.describe_instances(
-    Filters=[
-        {
-            "Name": "instance-state-name",
-            "Values": ["running"]
-        }
-    ]
-).get("Reservations")
-
-EC2_INSTANCES = EC2_RESOURCE.instances.filter(
-    Filters=[
-        {
-            "Name": "instance-state-name",
-            "Values": ["running", "pending"]
-        }
-    ],
-    # InstanceIds=['']
-)
-
-AMI_CLIENT = EC2_CLIENT.describe_images(
-    Filters=[
-        {
-            'Name': 'state',
-            'Values': ['available']
-        }
-    ],
-    Owners=['self']
-)
+# AMI_CLIENT = EC2_CLIENT.describe_images(
+#     Filters=[
+#         {
+#             'Name': 'state',
+#             'Values': ['available']
+#         }
+#     ],
+#     Owners=['self']
+# )
 
 AMI_RESOURCE = EC2_RESOURCE.images.filter(
     Filters=[
@@ -62,9 +38,7 @@ AMI_RESOURCE = EC2_RESOURCE.images.filter(
     Owners=['self']
 )
 
-SNAPSHOT_CLIENT = EC2_CLIENT.describe_snapshots(
-    OwnerIds=['self']
-)
+# SNAPSHOT_CLIENT = EC2_CLIENT.describe_snapshots(OwnerIds=['self'])
 
 SNAPSHOT_RESOURCE = EC2_RESOURCE.snapshots.filter(
     Filters=[
@@ -94,65 +68,6 @@ VOLUME_RESOURCE = EC2_RESOURCE.volumes.filter(
 def print_list(print_this: list):
     for item in print_this:
         print(f"{item}")
-
-
-def print_rds_instances():
-    if not RDS_CLIENT:
-        print("No RDS instances to output.")
-        return
-
-    for rds in RDS_CLIENT['DBInstances']:
-        try:
-            # print(rds)
-            print(f'{rds["DBInstanceIdentifier"]}')
-            cis_id = "2.3.1"
-            print(f"storage encryption: {rds['StorageEncrypted']}")
-            cis_id = "2.3.2"
-            print(f"minor ver upgrade: {rds['AutoMinorVersionUpgrade']}")
-            cis_id = "2.3.3"
-            print(f"public access: {rds['PubliclyAccessible']}\n")
-
-        except ClientError as err:
-            LOGGER.error(f'ClientError: {err}')
-
-
-# 2.2.1
-# aws ec2 get-ebs-encryption-by-default --region us-gov-west-1
-# TODO make sure not a false positive
-def check_ebs_encryption(ec2_issues: dict = {}) -> dict:
-    if not RESERVATIONS:
-        print('No EC2 to check EBS volume encryption for.')
-
-    try:
-        response = EC2_CLIENT.get_ebs_encryption_by_default()
-        cis_id = '2.2.1'
-        issue = "EBS encryption default"
-
-        # print(response)
-
-        if not response['EbsEncryptionByDefault']:
-            ec2_issues = cis_issue_logger(issue, ec2_issues, cis_id)
-        else:
-            print('All good.')
-
-    except ClientError as client_error:
-        LOGGER.error(f'ClientError: {client_error}')
-
-    return ec2_issues
-
-
-# aws ec2 describe-route-tables --filter "Name=vpc-id,Values=<vpc_id>" --query "RouteTables[*].{RouteTableId:RouteTableId, VpcId:VpcId, Routes:Routes, AssociatedSubnets:Associations[*].SubnetId}"
-def print_ec2_instances():
-    if not RESERVATIONS:
-        print('No EC2 instances to output.')
-
-    for reservation in RESERVATIONS:
-        for ec2 in reservation['Instances']:
-            # print(f'{ec2["InstanceId"]} created by {ec2["ImageId"]} in {ec2["VpcId"]}, state: {ec2["State"]["Name"]}')
-            print(f"{ec2['InstanceId']} attached to {ec2['BlockDeviceMappings'][0]['Ebs']['VolumeId']} status: {ec2['BlockDeviceMappings'][0]['Ebs']['Status']}")
-
-    # for ec2 in EC2_INSTANCES.all():
-    #     print(f"{ec2.instance_id} created by {ec2.image_id}")
 
 
 def sort_and_filter_amis(days_to_retain: int = 30) -> list:
